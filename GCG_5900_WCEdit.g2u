@@ -1,0 +1,222 @@
+Program.Sub.ScreenSU.Start
+Gui.Reason..Create
+Gui.Reason..Caption("Select Reason Code")
+Gui.Reason..Size(4605,2040)
+Gui.Reason..MinX(0)
+Gui.Reason..MinY(0)
+Gui.Reason..Position(0,0)
+Gui.Reason..BackColor(-2147483633)
+Gui.Reason..MousePointer(0)
+Gui.Reason..ControlBox(False)
+Gui.Reason.lbl1.Create(Label,"Select Reason Code for Highlighted Row from the Grid",True,4335,255,0,210,195,True,0,"Arial",8,-2147483633,0)
+Gui.Reason.ddlReason.Create(DropDownList)
+Gui.Reason.ddlReason.Size(3945,330)
+Gui.Reason.ddlReason.Position(255,450)
+Gui.Reason.cmdOK.Create(Button)
+Gui.Reason.cmdOK.Size(855,375)
+Gui.Reason.cmdOK.Position(255,960)
+Gui.Reason.cmdOK.Caption("OK")
+Gui.Reason.cmdOK.Event(Click,cmdOK_Click)
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'BN, Mar 2020
+'Unanet Integration
+'Shop Floor Control > Transactions > Edit Work Order Detail
+F.Intrinsic.Control.Try
+	v.Local.sError.Declare
+	v.Local.sSQL.Declare
+	v.Local.sRet.Declare
+	v.Local.bInGroup.Declare 
+
+	'Employee change/Employee browser hook	
+	f.Intrinsic.Control.SelectCase(v.Caller.Hook)
+		f.Intrinsic.Control.CaseAny(32311,32312,32313)	
+			'Delete Row Selection
+			f.ODBC.Connection!conx.OpenCompanyConnection
+			f.Intrinsic.String.Build("Delete from GCG_5900_Note_Done Where UserID = '{0}'",v.Caller.User,v.Local.sSQL)
+			f.ODBC.Connection!conx.Execute(v.Local.sSQL)			
+			f.ODBC.Connection!conx.Close
+			
+			f.Intrinsic.Control.If(v.Caller.User,<>,"SUPERVSR")
+				'Check security and lock screen controls
+				f.Global.Security.IsInGroup(v.Caller.User,"WOEDIT",v.Caller.CompanyCode,v.Local.bInGroup)
+				f.Intrinsic.Control.If(v.Local.bInGroup.Not)
+					'Check employee number tied to the user id
+					f.Intrinsic.String.Build("Select Employee from Employee_Mstr where PR_User_ID = '{0}'",v.Caller.User,v.Local.sSQL)
+					f.ODBC.Connection!conx.OpenCompanyConnection
+					f.ODBC.Connection!conx.ExecuteAndReturn(v.Local.sSQL,v.Local.sRet)
+					f.ODBC.Connection!conx.Close
+					f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF)
+						'User is not in the security group to edit other employee records and also user does not tie to a specific employee number
+						f.Intrinsic.Control.CallSub("Lock_controls","iLock",1)
+						f.Intrinsic.UI.Msgbox("User is not SUPERVSR and user does not have an employee ID attached.","Attention")
+						f.Intrinsic.Control.CallSub("Unload")
+					f.Intrinsic.Control.Else	
+						f.Intrinsic.Control.If(v.Local.sRet,<>,Variable.Passed.000079)
+							f.Intrinsic.Control.CallSub("Lock_controls","iLock",1)
+							f.Intrinsic.UI.Msgbox("User is not SUPERVSR or neither in security group to modify other employee records.","Attention")
+							f.Intrinsic.Control.CallSub("Unload")							
+						f.Intrinsic.Control.EndIf
+					f.Intrinsic.Control.EndIf				
+				f.Intrinsic.Control.EndIf			
+			f.Intrinsic.Control.EndIf
+			
+		'Pre Save hook  (Tentative: Pre Delete Hook - check if the reason code is saved for that row - 32322)
+		f.Intrinsic.Control.CaseAny(32318)	
+			f.ODBC.Connection!conx.OpenCompanyConnection
+			f.Intrinsic.String.Build("Select UserID,RowSelect from GCG_5900_Note_Done Where UserID = '{0}' and RowSelect = '{1}'",v.Caller.User,Variable.Passed.GRID00-ROW-SEL,v.Local.sSQL)
+			f.ODBC.Connection!conx.ExecuteAndReturn(v.Local.sSQL,v.Local.sRet)
+			f.ODBC.Connection!conx.Close
+			f.Intrinsic.Control.If(v.Local.sRet,=,"")
+				v.Passed.777777.Set(1)
+				f.Intrinsic.UI.Msgbox("No data is saved. Please click the Notes button to set the Reason Code before saving.","Attention")	
+				f.Intrinsic.Control.CallSub("Unload")
+			f.Intrinsic.Control.EndIf
+			f.ODBC.Connection!conx.OpenCompanyConnection
+			f.Intrinsic.String.Build("Delete from GCG_5900_Note_Done Where UserID = '{0}' and RowSelect = '{1}'",v.Caller.User,Variable.Passed.GRID00-ROW-SEL,v.Local.sSQL)
+			f.ODBC.Connection!conx.Execute(v.Local.sSQL)
+			f.ODBC.Connection!conx.Close			
+			f.Intrinsic.Control.CallSub("Unload")			
+		
+		'Post Update hook
+		f.Intrinsic.Control.Case(32327)		
+			'Delete Row Selection
+			f.ODBC.Connection!conx.OpenCompanyConnection
+			f.Intrinsic.String.Build("Delete from GCG_5900_Note_Done Where UserID = '{0}'",v.Caller.User,v.Local.sSQL)
+			f.ODBC.Connection!conx.Execute(v.Local.sSQL)			
+			f.ODBC.Connection!conx.Close			
+			
+		'Pre-note Hook, called by clicking the Notes button
+		f.Intrinsic.Control.Case(32328)		
+			'Variable.Passed.GRID00-ROW-SEL
+			'Set the Global variable to WOEDITSCREEN, to signal that this is called from the WO Edit screen. Because the Notes screen can also be used by other core program like PO receipt
+			v.Passed.Global.Set("WOEDITSCREEN")
+			f.ODBC.Connection!conx.OpenCompanyConnection
+			f.Intrinsic.String.Build("Delete from GCG_5900_Note_Done Where UserID = '{0}' and RowSelect = '{1}'",v.Caller.User,Variable.Passed.GRID00-ROW-SEL,v.Local.sSQL)
+			f.ODBC.Connection!conx.Execute(v.Local.sSQL)
+			f.Intrinsic.String.Build("Insert into GCG_5900_Note_Done (UserID,RowSelect) values ('{0}','{1}')",v.Caller.User,Variable.Passed.GRID00-ROW-SEL,v.Local.sSQL)
+			f.ODBC.Connection!conx.Execute(v.Local.sSQL)
+			f.ODBC.Connection!conx.Close
+			f.Intrinsic.Control.CallSub("Unload")
+			
+		'Populate Note Hook
+		f.Intrinsic.Control.CaseAny(39810)	
+			
+			'Check if it is called from the WOEdit screen
+			F.Intrinsic.Control.If(V.Passed.Global.Trim,=,"WOEDITSCREEN")
+				gui.Reason.ddlReason.AddItem("Additional Time")
+				gui.Reason.ddlReason.AddItem("Contract Modification")
+				gui.Reason.ddlReason.AddItem("Entry Issue")
+				gui.Reason.ddlReason.AddItem("OT Authorized")
+				gui.Reason.ddlReason.AddItem("PM Requested Change")
+				gui.Reason.ddlReason.ListIndex(0)
+				gui.Reason..Show			
+			F.Intrinsic.Control.EndIf
+		
+		'Pre Exit hook of at the Notes screen
+		f.Intrinsic.Control.Case(39824)			
+			'Check if it is called from the WOEdit screen
+			F.Intrinsic.Control.If(V.Passed.Global.Trim,=,"WOEDITSCREEN")		
+				f.Intrinsic.Control.If(Variable.Passed.000001,<>,"~Saved!")
+					f.Intrinsic.UI.Msgbox("You have to click Save")
+					v.Passed.777777.Set(1)						
+				f.Intrinsic.Control.EndIf
+				f.Intrinsic.Control.CallSub("Unload")
+			f.Intrinsic.Control.EndIf	
+			
+		'Post Save in Note screen
+		f.Intrinsic.Control.Case(39821)
+			'Check if it is called from the WOEdit screen
+			F.Intrinsic.Control.If(V.Passed.Global.Trim,=,"WOEDITSCREEN")			
+				Variable.Passed.000001.Set("~Saved!")			
+				f.Intrinsic.Control.CallSub("Unload")
+			f.Intrinsic.Control.EndIf	
+	f.Intrinsic.Control.EndSelect	
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: 5900 GCG_5900_WCEdit.g2u {0}{1}Subroutine: {2}{1}Subroutine called from:{6}{1}Error Occurred: {3}{1}Description: {4}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,v.Ambient.SubroutineCalledFrom,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.CallSub("Unload")
+F.Intrinsic.Control.EndTry
+
+Program.Sub.Main.End
+
+Program.Sub.Lock_controls.Start
+F.Intrinsic.Control.Try
+	v.Local.sError.Declare
+	v.Local.sRow.Declare
+	v.Local.iUbound.Declare
+	v.Local.iC.Declare
+	v.Local.iRow.Declare
+	'Update button
+	F.Intrinsic.UI.ChangeCallerProperty(Variable.Passed.000149,"LOCK",v.Args.iLock)
+	'Save button
+	F.Intrinsic.UI.ChangeCallerProperty(Variable.Passed.000153,"LOCK",v.Args.iLock)
+	'Delete button
+	F.Intrinsic.UI.ChangeCallerProperty(Variable.Passed.000154,"LOCK",v.Args.iLock)
+	'Split button
+	F.Intrinsic.UI.ChangeCallerProperty(Variable.Passed.000134,"LOCK",v.Args.iLock)
+	'Add button
+	F.Intrinsic.UI.ChangeCallerProperty(Variable.Passed.000205,"LOCK",v.Args.iLock)
+	'Note Button
+	F.Intrinsic.UI.ChangeCallerProperty(Variable.Passed.000368,"LOCK",v.Args.iLock)
+	'BDF
+	F.Intrinsic.BDF.Load("AUX001","AUX001")
+	F.Intrinsic.BDF.Clone("AUX001","Clone")
+
+	f.Intrinsic.BDF.Save("Clone")
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: 5900 GCG_5900_WCEdit.g2u {0}{1}Subroutine: {2}{1}Subroutine called from:{6}{1}Error Occurred: {3}{1}Description: {4}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,v.Ambient.SubroutineCalledFrom,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.CallSub("Unload")
+F.Intrinsic.Control.EndTry
+Program.Sub.Lock_controls.End
+
+Program.Sub.UnLoad.Start
+f.Intrinsic.Control.Try
+	v.Local.sError.Declare
+
+	f.Intrinsic.Control.End
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: 5900 GCG_5900_WCEdit.g2u {0}{1}Subroutine: {2}{1}Subroutine called from:{6}{1}Error Occurred: {3}{1}Description: {4}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,v.Ambient.SubroutineCalledFrom,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.UnLoad.End
+
+Program.Sub.Reason_UnLoad.Start
+f.Intrinsic.Control.Try
+	v.Local.sError.Declare
+	f.Intrinsic.UI.Msgbox("No reason is saved for this transaction.","End")
+	v.Passed.777777.Set(1)
+	f.Intrinsic.Control.CallSub("Unload")
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: 5900 GCG_5900_WCEdit.g2u {0}{1}Subroutine: {2}{1}Subroutine called from:{6}{1}Error Occurred: {3}{1}Description: {4}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,v.Ambient.SubroutineCalledFrom,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.Reason_UnLoad.End
+
+Program.Sub.cmdOK_Click.Start
+f.Intrinsic.Control.Try
+	v.Local.sError.Declare
+
+	Variable.Passed.000009.set(v.Screen.Reason!ddlReason.Text)
+	F.Intrinsic.UI.ChangeCallerProperty(Variable.Passed.000009,"LOCK",1)
+	'Rich Textbox
+	F.Intrinsic.UI.ChangeCallerProperty(Variable.Passed.000036,"LOCK",1)
+	f.Intrinsic.Control.CallSub("Unload")
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: 5900 GCG_5900_WCEdit.g2u {0}{1}Subroutine: {2}{1}Subroutine called from:{6}{1}Error Occurred: {3}{1}Description: {4}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,v.Ambient.SubroutineCalledFrom,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.cmdOK_Click.End
