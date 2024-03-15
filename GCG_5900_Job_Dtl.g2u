@@ -1,0 +1,393 @@
+Program.Sub.ScreenSU.Start
+Gui.Form..Create
+Gui.Form..Caption("Export Job Detail")
+Gui.Form..Size(4905,1905)
+Gui.Form..MinX(0)
+Gui.Form..MinY(0)
+Gui.Form..Position(0,0)
+Gui.Form..BackColor(-2147483633)
+Gui.Form..MousePointer(0)
+Gui.Form..Event(UnLoad,Form_UnLoad)
+Gui.Form.dtpExp.Create(DatePicker)
+Gui.Form.dtpExp.Size(2520,285)
+Gui.Form.dtpExp.Position(330,495)
+Gui.Form.lbl1.Create(Label,"Select Date Changed",True,1935,255,0,330,270,True,0,"Arial",8,-2147483633,0)
+Gui.Form.cmdOK.Create(Button)
+Gui.Form.cmdOK.Size(855,375)
+Gui.Form.cmdOK.Position(330,885)
+Gui.Form.cmdOK.Caption("OK")
+Gui.Form.cmdOK.Event(Click,cmdOK_Click)
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+v.Global.sLog.Declare
+v.Global.sFile.Declare
+f.Intrinsic.Control.CallSub("Check_And_Create_Custom_Folder")
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+'BN, Mar 2020
+'This project will export Job Details time recorded/modified/added/deleted from GSS to a csv file for importing into Unanet.
+'The data exported contains reason codes and time stamps, and grouped by Employee, Project, Phase, Date Worked.
+'The total hours worked is used in Unanet to update (not append).
+
+'In general, GSS records time at the GUI station, and administrator can modify/add/delete records at
+'Shop Floor Control > Transactions > Edit Work Order Detail. 
+'When at the Edit Work Order Detail, admin is required to input the reason code from a dropdown list for every record modified.
+
+'The program is attached to the Task Scheduler running Daily, that pulls yesterday changed data. It can also be run at a menu item. If run from the menu item, user will have to specify what date changed to be exported.
+'rewrote the connections to open and close when needed, not at the begining and end of the script.
+
+'CSV fields:
+'Username,Work_Date,Project_Ord_Code,Project_Code,Task_Name,Project_Type,Pay_Code,Hours,Bill_Rate,Cost_Rate,Project_Org_Override,Person_Org_Override,Labor_Category,Location,Comments,Change_Reason,Cost_Structure,Cost_Element,Time_Period_Begin_Date,Post_Date,Additional_Pay_Rate
+f.Intrinsic.Control.Try
+	v.Local.sError.Declare
+	v.Local.dYesterday.Declare
+	
+	f.Intrinsic.Control.CallSub("Load_Dictionary")
+	
+	f.Intrinsic.Control.If(V.Ambient.IsInTaskScheduler.Not)	
+		gui.Form..Show
+	f.Intrinsic.Control.Else
+		'Get Yesterday date
+		f.Intrinsic.Date.DateAdd("D",-1,v.Ambient.Date,v.Local.dYesterday)
+		f.Intrinsic.Control.CallSub("Process_a_Day","dDateChanged",v.Local.dYesterday)
+		f.Intrinsic.Control.CallSub("Unload")
+	f.Intrinsic.Control.EndIf	
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: 5900 GCG_5900_Job_Dtl.g2u {0}{1}Subroutine: {2}{1}Subroutine called from:{6}{1}Error Occurred: {3}{1}Description: {4}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,v.Ambient.SubroutineCalledFrom,V.Local.sError)
+	f.Intrinsic.Control.If(V.Ambient.IsInTaskScheduler.Not)		
+		F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.Else
+		f.Intrinsic.String.Build("FROM TASK SCHEDULER: {1}",V.Local.sError,V.Local.sError)
+	f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.CallSub("Write_Log","sError",v.Local.sError)
+F.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.Write_Log.Start
+F.Intrinsic.Control.Try
+	V.Local.sError.Declare
+	v.Local.bEx.Declare
+	v.Local.sCurrentContent.Declare
+	v.Local.sFile.Declare
+
+	f.Intrinsic.Control.If(v.Args.sError.Trim,<>,"")
+		f.Intrinsic.String.Build("{0}{1}{2}",v.Global.sLog,v.Ambient.NewLine,v.Args.sError,v.Global.sLog)
+	f.Intrinsic.Control.EndIf
+	'Check file and write log, appending line to log
+	f.Intrinsic.File.Exists(v.Global.sFile,v.Local.bEx)
+	f.Intrinsic.Control.If(v.Local.bEx)
+		f.Intrinsic.File.File2String(v.Global.sFile,v.Local.sCurrentContent)
+		f.Intrinsic.String.Build("{0}{1}{1}{2}:{1}{3}",v.Local.sCurrentContent,v.Ambient.NewLine,v.Ambient.Now,v.Global.sLog,v.Global.sLog)
+	f.Intrinsic.Control.EndIf
+	f.Intrinsic.File.String2File(v.Global.sFile,v.Global.sLog)		
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: GCG_5900_Job_Steps.g2u {0}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	f.Intrinsic.String.Build("{0}{1}{2}",v.Global.sLog,v.Ambient.NewLine,v.Local.sError,v.Global.sLog)
+	f.Intrinsic.String.Build("{0}\Custom\5900\{1}\GAB Log\{2}_WriteLogError.txt",v.Caller.GlobalDir,v.Caller.CompanyCode,v.Ambient.Now.FormatYYYYMMDDHHNNSS,v.Local.sFile)
+	f.Intrinsic.File.String2File(v.Local.sFile,v.Global.sLog)
+	f.Intrinsic.Control.CallSub("Unload")
+F.Intrinsic.Control.EndTry
+Program.Sub.Write_Log.End
+
+Program.Sub.Check_And_Create_Custom_Folder.Start
+f.Intrinsic.Control.Try
+	v.Local.sError.Declare
+	v.Local.bExist.Declare
+	v.Local.sFile.Declare
+	v.Local.sDir.Declare
+	
+	f.Intrinsic.String.Build("{0}\Custom",v.Caller.GlobalDir,v.Local.sDir)
+	f.Intrinsic.File.DirExists(v.Local.sDir,v.Local.bExist)
+	f.Intrinsic.Control.If(v.Local.bExist.Not)
+		f.Intrinsic.File.CreateDir(v.Local.sDir)
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.String.Build("{0}\Custom\5900",v.Caller.GlobalDir,v.Local.sDir)
+	f.Intrinsic.File.DirExists(v.Local.sDir,v.Local.bExist)
+	f.Intrinsic.Control.If(v.Local.bExist.Not)
+		f.Intrinsic.File.CreateDir(v.Local.sDir)
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.String.Build("{0}\Custom\5900\{1}",v.Caller.GlobalDir,v.Caller.CompanyCode,v.Local.sDir)
+	f.Intrinsic.File.DirExists(v.Local.sDir,v.Local.bExist)
+	f.Intrinsic.Control.If(v.Local.bExist.Not)
+		f.Intrinsic.File.CreateDir(v.Local.sDir)
+	f.Intrinsic.Control.EndIf	
+	
+	f.Intrinsic.String.Build("{0}\Custom\5900\{1}\GAB Log",v.Caller.GlobalDir,v.Caller.CompanyCode,v.Local.sDir)
+	f.Intrinsic.File.DirExists(v.Local.sDir,v.Local.bExist)
+	f.Intrinsic.Control.If(v.Local.bExist.Not)
+		f.Intrinsic.File.CreateDir(v.Local.sDir)
+	f.Intrinsic.Control.EndIf		
+	
+	f.Intrinsic.String.Build("{0}\Custom\5900\{1}\GAB Log\{2}.txt",v.Caller.GlobalDir,v.Caller.CompanyCode,v.Ambient.Date.FormatYYYYMMDD,v.Global.sFile)
+	
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: GCG_5900_Job_Steps.g2u {0}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	f.Intrinsic.String.Build("{0}{1}{2}",v.Global.sLog,v.Ambient.NewLine,v.Local.sError,v.Global.sLog)
+	f.Intrinsic.String.Build("{0}\{1}_{2}_Custom5900FolderError.txt",v.Caller.FilesDir,v.Caller.CompanyCode,v.Ambient.Now.FormatYYYYMMDDHHNNSS,v.Local.sFile)
+	f.Intrinsic.File.String2File(v.Local.sFile,v.Global.sLog)
+	f.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.Check_And_Create_Custom_Folder.End
+
+Program.Sub.UnLoad.Start
+f.Intrinsic.Control.Try
+	v.Local.sError.Declare
+	
+	f.Intrinsic.Control.End
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: 5900 GCG_5900_Job_Dtl.g2u {0}{1}Subroutine: {2}{1}Subroutine called from:{6}{1}Error Occurred: {3}{1}Description: {4}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,v.Ambient.SubroutineCalledFrom,V.Local.sError)
+	f.Intrinsic.Control.If(V.Ambient.IsInTaskScheduler.Not)		
+		F.Intrinsic.UI.Msgbox(V.Local.sError)	
+	f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.End
+F.Intrinsic.Control.EndTry
+Program.Sub.UnLoad.End
+
+Program.Sub.Form_UnLoad.Start
+f.Intrinsic.Control.CallSub("Unload")
+Program.Sub.Form_UnLoad.End
+
+Program.Sub.Load_Dictionary.Start
+f.Intrinsic.Control.Try
+	v.Local.sError.Declare
+	
+	f.ODBC.Connection!conx.OpenCompanyConnection(300)
+	f.Data.Dictionary.CreateFromSQL("ReasonCodeDict","conx","Select job + '|' +  suffix + '|' +  job_seq + '|' +  Seq + '|' + convert(date,sql_char) as JSSKD,rtrim(Convert(Text,SQL_Char)) as Text from V_Job_Dtl_Notes ")
+	F.ODBC.Connection!conx.close
+	f.Data.Dictionary.SetDefaultReturn("ReasonCodeDict","")	
+	
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: 5900 GCG_5900_Job_Dtl.g2u {0}{1}Subroutine: {2}{1}Subroutine called from:{6}{1}Error Occurred: {3}{1}Description: {4}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,v.Ambient.SubroutineCalledFrom,V.Local.sError)
+	f.Intrinsic.Control.If(V.Ambient.IsInTaskScheduler.Not)		
+		F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.Else
+		f.Intrinsic.String.Build("FROM TASK SCHEDULER: {1}",V.Local.sError,V.Local.sError)
+	f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.CallSub("Write_Log","sError",v.Local.sError)
+F.Intrinsic.Control.EndTry	
+Program.Sub.Load_Dictionary.End
+
+Program.Sub.cmdOK_Click.Start
+f.Intrinsic.Control.Try
+	v.Local.sError.Declare
+	
+	gui.Form.cmdOK.Enabled(False)
+	f.Intrinsic.Control.CallSub("Process_A_Day","dDateChanged",v.Screen.Form!dtpExp.Value)
+	gui.Form.cmdOK.Enabled(True)
+	f.Intrinsic.Control.CallSub("Unload")
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: 5900 GCG_5900_Job_Dtl.g2u {0}{1}Subroutine: {2}{1}Subroutine called from:{6}{1}Error Occurred: {3}{1}Description: {4}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,v.Ambient.SubroutineCalledFrom,V.Local.sError)
+	f.Intrinsic.Control.If(V.Ambient.IsInTaskScheduler.Not)		
+		F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.Else
+		f.Intrinsic.String.Build("FROM TASK SCHEDULER: {1}",V.Local.sError,V.Local.sError)
+	f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.CallSub("Write_Log","sError",v.Local.sError)
+F.Intrinsic.Control.EndTry
+Program.Sub.cmdOK_Click.End
+
+Program.Sub.Process_A_Day.Start
+f.Intrinsic.Control.Try
+	v.Local.sError.Declare
+	v.Local.sSQL.Declare
+	v.Local.sFile.Declare	
+	v.Local.sContent.Declare
+	v.Local.sFlag.Declare
+	v.Local.sJSSReason.Declare
+	
+	v.Local.dDateChanged.Declare
+	v.Local.sJob.Declare
+	v.Local.sSuffix.Declare
+	v.Local.sSeq.Declare
+	v.Local.sSequence_Key.Declare	
+	v.Local.dDateSequence.Declare	
+	v.Local.sJobSufSeqDateSeqKey.Declare	
+
+	v.Local.iDelete.Declare
+	v.Local.sHoursWorked.Declare
+	v.Local.sTotalHoursWorked.Declare
+	v.Local.sTimeChange.Declare
+	
+	'For mass setting
+	v.Local.sUsername.declare
+	V.local.sWork_Date.declare
+	V.local.sProject_Org_Code.declare
+	V.local.sProject_Code.declare
+	V.local.sTask_Name.declare
+	V.local.sProject_Type.declare
+	V.local.sPay_Code.declare
+	V.local.sHours.declare
+	V.local.sBill_Rate.declare
+	V.local.sCost_Rate.declare
+	V.local.sProject_Org_Override.declare
+	V.local.sPerson_Org_Override.declare
+	V.local.sLabor_Category.declare
+	V.local.sLocation.declare
+	V.local.sComments.declare
+	V.local.sChange_Reason.declare
+	V.local.sCost_Structure.declare
+	V.local.sCost_Element.declare
+	V.local.sTime_Period_Begin_Date.declare
+	V.local.sPost_Date.declare
+	V.local.sAdditional_Pay_Rate.declare	
+	v.Local.sCustomer.Declare
+	v.Local.bEx.Declare
+	v.Local.sJobSeqListWithBlankY.Declare
+	
+	v.Local.iEPP.Declare
+	v.Local.sEmployee.Declare
+	v.Local.sProject.Declare
+	v.Local.sPhase.Declare
+	v.Local.sFilter.Declare
+	v.Local.iSeqKey.Declare	
+	v.Local.sJSS.Declare	
+
+	v.Local.sHold.Declare
+	v.Local.fHold.Declare
+	v.Local.dDateChanged.Set(v.Args.dDateChanged)
+	v.Local.sRet.Declare
+	v.Local.bExist.Declare
+	
+	'Get Employee GSS User ID dictionary
+	f.Data.Dictionary.Exists("dEmp",v.Local.bExist)
+	f.Intrinsic.Control.If(v.Local.bExist)
+		f.Data.Dictionary.Close("dEmp")
+	f.Intrinsic.Control.EndIf
+	f.ODBC.Connection!conx.OpenCompanyConnection(300)
+	f.Data.Dictionary.CreateFromSQL("dEmp","conx","select rtrim(employee),rtrim(Pr_user_id) from employee_mstr")
+	f.Data.Dictionary.SetDefaultReturn("dEmp","")
+	
+	
+	'Column headers for csv file
+	v.Local.sContent.Set("*Username,Work_Date,Project_Org_Code,Project_Code,Task_Name,Project_Type,Pay_Code,Hours,Bill_Rate,Cost_Rate,Project_Org_Override,Person_Org_Override,Labor_Category,Location,Comments,Change_Reason,Cost_Structure,Cost_Element,Time_Period_Begin_Date,Post_Date,Additional_Pay_Rate")
+	
+	'Get the list of Employee,Project,Phase,Date_Sequence affected by date change
+	f.Intrinsic.String.Build("Select Distinct Empl,d.Date_Sequence,Customer,Project,Phase from V_Job_Detail d left join v_Job_header h on d.Job = h.Job and d.Suffix = h.Suffix where DATE_LAST_CHG = '{0}' and lmo = 'L' and Project <> '' and Phase <> '' Order by d.Job,d.Suffix,d.Seq",v.Local.dDateChanged.PervasiveDate,v.Local.sSQL)
+	f.Intrinsic.Control.If(v.DataTable.EPP.Exists)
+		f.Data.DataTable.Close("EPP")
+	f.Intrinsic.Control.EndIf	
+	f.Data.DataTable.CreateFromSQL("EPP","conx",v.Local.sSQL,True)
+	
+	'Level 1: Employee,Project,Phase,Date_Sequence
+	f.Intrinsic.Control.For(v.Local.iEPP,0,v.DataTable.EPP.RowCount--,1)
+		v.Local.sEmployee.Set(v.DataTable.EPP(v.Local.iEPP).Empl!FieldValString)
+		v.Local.sProject.Set(v.DataTable.EPP(v.Local.iEPP).Project!FieldValString)
+		v.Local.sPhase.Set(v.DataTable.EPP(v.Local.iEPP).Phase!FieldValString)
+		v.Local.sCustomer.Set(v.DataTable.EPP(v.Local.iEPP).Customer!FieldValString)
+		v.Local.dDateSequence.Set(v.DataTable.EPP(v.Local.iEPP).Date_Sequence!FieldValString)
+		'Get all details for Employee,Project,Phase,Date_Sequence
+		f.Intrinsic.String.Build("Select  DATE_LAST_CHG,Convert(TIME_LAST_CHG,SQL_Char) as TIME_LAST_CHG,LAST_CHG_BY,LAST_CHG_PROG,DATE_SEQUENCE,EDITED_WO_DTL,d.JOB,d.SUFFIX,SEQ,SEQUENCE_KEY,d.JOB + '|' + d.SUFFIX + '|' + d.SEQ + '|' + SEQUENCE_KEY + '|' + Convert(Date_Sequence,SQL_Char)  as JSSKD,'' as ReasonCode,EMPL,HOURS_WORKED from V_Job_Detail d left join v_Job_Header h on d.Job = h.Job and d.Suffix = h.Suffix where Empl = '{0}' and h.Project = '{1}' and h.Phase = '{2}' and Date_Sequence = '{3}' Order by d.Job,d.Suffix,Seq,SEQUENCE_KEY",v.Local.sEmployee,v.Local.sProject,v.Local.sPhase,v.Local.dDateSequence.PervasiveDate,v.Local.sSQL)		
+		f.Intrinsic.Control.If(v.DataTable.EPPDetail.Exists)
+			f.Data.DataTable.Close("EPPDetail")
+		f.Intrinsic.Control.EndIf		
+		f.Data.DataTable.CreateFromSQL("EPPDetail",conx,v.Local.sSQL,True)
+		f.Data.DataTable.FillFromDictionary("EPPDetail","ReasonCodeDict","JSSKD","ReasonCode")
+		
+		'Total hours
+		f.Data.DataTable.Compute("EPPDetail","Sum(Hours_Worked)","EDITED_WO_DTL = '' or Edited_WO_DTL = 'Y' ",v.Local.sHold)
+		v.Local.fHold.Set(v.Local.sHold)
+		f.Intrinsic.String.Format(v.Local.fHold,"0.0000",v.Local.sTotalHoursWorked)			
+		
+		'Build ReasonCode (Get all reason code)		
+		'Level 2: Get details of reasoncode
+		v.Local.sJSSReason.Set("")			
+		f.Intrinsic.Control.For(v.Local.iSeqKey,0,v.Datatable.EPPDetail.RowCount--,1)	
+			v.Local.sJob.Set(v.Datatable.EPPDetail(v.local.iSeqKey).Job!FieldValString)
+			v.Local.sSuffix.Set(v.Datatable.EPPDetail(v.local.iSeqKey).Suffix!FieldValString)
+			v.Local.sSeq.Set(v.Datatable.EPPDetail(v.local.iSeqKey).Seq!FieldValString)
+			v.Local.sTimeChange.Set(v.Datatable.EPPDetail(v.local.iSeqKey).TIME_LAST_CHG!FieldValString)
+			v.Local.sSequence_Key.Set(v.Datatable.EPPDetail(v.local.iSeqKey).Sequence_Key!FieldValString)
+			f.Intrinsic.String.Build("{0}-{1}-{2}-{3}-{4}",v.Local.sJob,v.Local.sSuffix,v.Local.sSeq,v.Local.dDateSequence.FormatMM/DD/YYYY,v.Datatable.EPPDetail(v.local.iSeqKey).Sequence_Key!FieldValString,v.Local.sJobSufSeqDateSeqKey)
+			
+			'Get Modified,Added Cases
+			f.Intrinsic.String.Build("Select Top 1 LAST_CHG_BY,DATE_LAST_CHG,TIME_LAST_CHG from GCG_5900_Original where Job = '{0}' and Suffix = '{1}' and Seq = '{2}' and Date_Sequence = '{3}' and Sequence_Key = '{4}'",v.Local.sJob,v.Local.sSuffix,v.Local.sSeq,v.Local.dDateSequence.PervasiveDate,v.Local.sSequence_Key,v.Local.sSQL)
+			f.ODBC.Connection!conx.ExecuteAndReturn(v.Local.sSQL,v.Local.sRet)			
+			f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF.Not)
+				f.Intrinsic.String.Split(v.Local.sRet,"*!*",v.Local.sRet)
+				f.Intrinsic.String.Build("{0} GUI Online {1} {2}",v.Local.sJobSufSeqDateSeqKey,v.Local.sRet(1),v.Local.sRet(2),v.Local.sFlag)
+				f.Intrinsic.String.Format(v.Datatable.EPPDetail(v.local.iSeqKey).HOURS_WORKED!FieldValString,"0.0000",v.Local.sHoursWorked)
+			f.Intrinsic.Control.Else
+			
+				f.Intrinsic.Control.If(v.Datatable.EPPDetail(v.local.iSeqKey).LAST_CHG_PROG!FieldValTrim,=,"JB0032",and,v.Datatable.EPPDetail(v.local.iSeqKey).EDITED_WO_DTL!FieldValTrim,=,"")
+					f.Intrinsic.String.Build("{0} Added {1} {2} {3}",v.Local.sJobSufSeqDateSeqKey,v.Datatable.EPPDetail(v.local.iSeqKey).LAST_CHG_BY!FieldValTrim,v.Datatable.EPPDetail(v.local.iSeqKey).DATE_LAST_CHG!FieldValString,v.local.sTimeChange,v.Local.sFlag)
+					f.Intrinsic.String.Format(v.Datatable.EPPDetail(v.local.iSeqKey).HOURS_WORKED!FieldValString,"0.0000",v.Local.sHoursWorked)
+				f.Intrinsic.Control.Else
+						f.Intrinsic.String.Build("{0} {1} {2} {3} {4}",v.Local.sJobSufSeqDateSeqKey,v.Datatable.EPPDetail(v.local.iSeqKey).ReasonCode!FieldValTrim,v.Datatable.EPPDetail(v.local.iSeqKey).LAST_CHG_BY!FieldValTrim,v.Datatable.EPPDetail(v.local.iSeqKey).DATE_LAST_CHG!FieldValString,v.local.sTimeChange,v.Local.sFlag)	
+						f.Intrinsic.String.Format(v.Datatable.EPPDetail(v.local.iSeqKey).HOURS_WORKED!FieldValString,"0.0000",v.Local.sHoursWorked)					
+				f.Intrinsic.Control.EndIf	
+				
+			f.Intrinsic.Control.EndIf	
+		
+			f.Intrinsic.Control.If(v.Local.iSeqKey,=,0)
+				f.Intrinsic.String.Build("{0} hrs: {1}",v.Local.sHoursWorked,v.Local.sFlag,v.Local.sJSSReason)
+			f.Intrinsic.Control.Else
+				f.Intrinsic.String.Build("{0}||{1} hrs: {2}",v.Local.sJSSReason,v.Local.sHoursWorked,v.Local.sFlag,v.Local.sJSSReason)
+			f.Intrinsic.Control.EndIf	
+		
+		'End Level 2	
+		f.Intrinsic.Control.Next(v.Local.iSeqKey)
+	
+		'Mass variables setup at Level 2: Empl,Project,Phase,Date_Sequence
+'		v.Local.sHold.Set(v.Local.sEmployee.Trim)
+'		v.Local.sHold.Set(v.dictionary.dEmp![v.Local.sHold])
+'		f.Intrinsic.Control.If(v.Local.sHold.Trim,<>,"")
+'			v.Local.sUsername.Set(v.Local.sHold.Trim)
+'		f.Intrinsic.Control.Else
+'			v.Local.sUsername.Set(v.Local.sEmployee)
+'		f.Intrinsic.Control.EndIf
+		v.Local.sUsername.Set(v.Local.sEmployee.Trim)
+		
+		V.local.sWork_Date.Set(v.Local.dDateSequence.FormatMM/DD/YYYY)
+		f.Intrinsic.Control.If(v.Local.sCustomer.Trim,<>,"")
+			f.Intrinsic.String.Build("C_{0}",v.Local.sCustomer,v.Local.sProject_Org_Code)
+		f.Intrinsic.Control.Else
+			v.Local.sProject_Org_Code.Set("~MENTIS")
+		f.Intrinsic.Control.EndIf	
+		v.Local.sProject_Code.Set(v.Local.sProject)	
+		V.local.sTask_Name.Set(v.Local.sPhase)
+		V.local.sProject_Type.Set("")
+		V.local.sPay_Code.Set("1RT")
+		V.local.sHours.Set(v.Local.sTotalHoursWorked)
+		V.local.sBill_Rate.Set("")
+		V.local.sCost_Rate.Set("")
+		V.local.sProject_Org_Override.Set("")
+		V.local.sPerson_Org_Override.Set("")
+		V.local.sLabor_Category.Set("")
+		V.local.sLocation.Set("")
+		V.local.sChange_Reason.Set(v.Local.sJSSReason.left2000)
+		f.Intrinsic.String.Replace(v.Local.sJSSReason,v.Local.sChange_Reason,"",v.Local.sComments)
+		V.local.sCost_Structure.Set("")
+		V.local.sCost_Element.Set("")
+		V.local.sTime_Period_Begin_Date.Set("")
+		V.local.sPost_Date.Set("")
+		V.local.sAdditional_Pay_Rate.Set("")			
+		
+		f.Intrinsic.String.Build("{0}{1}{2},{3},{4},{5},{6},{7},{8},{9},{10},{11},{12},{13},{14},{15},{16},{17},{18},{19},{20},{21},{22}",v.Local.sContent,v.Ambient.NewLine,v.local.sUsername,v.local.sWork_Date,v.local.sProject_Org_Code.Trim,v.local.sProject_Code.Trim,v.local.sTask_Name.Trim,v.local.sProject_Type,v.local.sPay_Code,v.local.sHours,v.local.sBill_Rate,v.local.sCost_Rate,v.local.sProject_Org_Override,v.local.sPerson_Org_Override,v.local.sLabor_Category,v.local.sLocation,v.local.sComments,v.local.sChange_Reason,v.local.sCost_Structure,v.local.sCost_Element,v.local.sTime_Period_Begin_Date,v.local.sPost_Date,v.local.sAdditional_Pay_Rate,v.Local.sContent)			
+
+		f.Data.DataTable.Close("EPPDetail")
+	
+	'End Level 1
+	f.Intrinsic.Control.Next(v.Local.iEPP)
+	
+	F.ODBC.Connection!conx.close
+	f.Intrinsic.String.Build("{0}\Custom\5900\{1}\GAB Log\{2}_{3}.csv",v.Caller.GlobalDir,v.Caller.CompanyCode,v.Local.dDateChanged.FormatYYYYMMDD,v.Ambient.Now.FormatYYYYMMDDHHNNSS,v.Local.sFile)
+	f.Intrinsic.File.String2File(v.Local.sFile,v.Local.sContent)
+	
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: 5900 GCG_5900_Job_Dtl.g2u {0}{1}Subroutine: {2}{1}Subroutine called from:{6}{1}Error Occurred: {3}{1}Description: {4}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,v.Ambient.SubroutineCalledFrom,V.Local.sError)
+	f.Intrinsic.Control.If(V.Ambient.IsInTaskScheduler.Not)		
+		F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.Else
+		f.Intrinsic.String.Build("FROM TASK SCHEDULER: {1}",V.Local.sError,V.Local.sError)
+	f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.CallSub("Write_Log","sError",v.Local.sError)
+F.Intrinsic.Control.EndTry	
+Program.Sub.Process_A_Day.End
